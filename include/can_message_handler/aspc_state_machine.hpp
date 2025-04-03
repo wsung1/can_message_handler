@@ -32,4 +32,4 @@ private:
 
 }  // namespace can_message_handler
 
-#endif  // CAN_MESSAGE_HANDLER__ASPC_STATE_MACHINE_HPP_ 
+#endif  // CAN_MESSAGE_HANDLER__ASPC_STATE_MACHINE_HPP_

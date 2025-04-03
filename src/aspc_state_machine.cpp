@@ -149,4 +149,4 @@ std::vector<can_msgs::msg::Frame> ASPCStateMachine::generateOutputMessages()
   return messages;
 }
 
-}  // namespace can_message_handler 
+}  // namespace can_message_handler
