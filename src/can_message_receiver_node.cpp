@@ -7,26 +7,31 @@ namespace can_message_handler
 CanMessageReceiverNode::CanMessageReceiverNode(const rclcpp::NodeOptions & options)
 : Node("can_message_receiver", options)
 {
-  // Declare and get parameters
-  this->declare_parameter("target_can_id", 0x211);
-  this->declare_parameter("target_byte", 0);
-  this->declare_parameter("target_bit", 0);
+  declareParameters();
+  target_can_id_ = this->get_parameter("target_can_id").as_int();
+  target_byte_index_ = this->get_parameter("target_byte_index").as_int();
+  target_bit_index_ = this->get_parameter("target_bit_index").as_int();
 
-  target_can_id_ = static_cast<uint32_t>(this->get_parameter("target_can_id").as_int());
-  target_byte_ = static_cast<uint8_t>(this->get_parameter("target_byte").as_int());
-  target_bit_ = static_cast<uint8_t>(this->get_parameter("target_bit").as_int());
-
-  // Create subscription
-  can_subscription_ = this->create_subscription<can_msgs::msg::Frame>(
-    "can_rx", 10,
+  can_subscriber_ = this->create_subscription<can_msgs::msg::Frame>(
+    "from_can_bus", 10,
     std::bind(&CanMessageReceiverNode::canMessageCallback, this, std::placeholders::_1));
 
-  RCLCPP_INFO(this->get_logger(), "CanMessageReceiverNode has been initialized");
+  vcu_status_publisher_ = this->create_publisher<std_msgs::msg::Bool>(
+    "vcu_asdrv_disable", 10);
+
+  RCLCPP_INFO(this->get_logger(), "CanMessageReceiverNode initialized");
 }
 
-bool CanMessageReceiverNode::checkBit(uint8_t byte, uint8_t bit) const
+CanMessageReceiverNode::~CanMessageReceiverNode()
 {
-  return (byte & (1 << bit)) != 0;
+  RCLCPP_INFO(this->get_logger(), "CanMessageReceiverNode destroyed");
+}
+
+void CanMessageReceiverNode::declareParameters()
+{
+  this->declare_parameter("target_can_id", 0x211);
+  this->declare_parameter("target_byte_index", 1);
+  this->declare_parameter("target_bit_index", 0);
 }
 
 void CanMessageReceiverNode::canMessageCallback(const can_msgs::msg::Frame::SharedPtr msg)
@@ -35,14 +40,16 @@ void CanMessageReceiverNode::canMessageCallback(const can_msgs::msg::Frame::Shar
     return;
   }
 
-  if (target_byte_ >= msg->dlc) {
-    RCLCPP_WARN(this->get_logger(), "Target byte %d is out of range (DLC: %d)", target_byte_, msg->dlc);
-    return;
-  }
+  if (msg->dlc > target_byte_index_) {
+    uint8_t target_byte = msg->data[target_byte_index_];
+    bool bit_value = (target_byte & (1 << target_bit_index_)) == 0;
 
-  bool bit_value = checkBit(msg->data[target_byte_], target_bit_);
-  RCLCPP_INFO(this->get_logger(), "CAN ID: 0x%X, Byte %d, Bit %d: %s",
-    msg->id, target_byte_, target_bit_, bit_value ? "true" : "false");
+    auto vcu_status = std_msgs::msg::Bool();
+    vcu_status.data = bit_value;
+    vcu_status_publisher_->publish(vcu_status);
+
+    RCLCPP_DEBUG(this->get_logger(), "VCU_ASDrvDisable status: %s", bit_value ? "true" : "false");
+  }
 }
 
 }  // namespace can_message_handler 

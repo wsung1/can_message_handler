@@ -28,7 +28,6 @@ private:
   // Methods
   void declareParameters();
   void canMessageCallback(const can_msgs::msg::Frame::SharedPtr msg);
-  bool checkBit(uint8_t byte, uint8_t bit) const;
 };
 
 }  // namespace can_message_handler

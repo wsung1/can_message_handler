@@ -3,6 +3,9 @@
 
 #include <rclcpp/rclcpp.hpp>
 #include <can_msgs/msg/frame.hpp>
+#include <memory>
+#include <thread>
+#include <atomic>
 #include "can_message_handler/aspc_state_machine.hpp"
 
 namespace can_message_handler
@@ -11,17 +14,30 @@ namespace can_message_handler
 class CanMessagePublisherNode : public rclcpp::Node
 {
 public:
-  explicit CanMessagePublisherNode(const rclcpp::NodeOptions & options);
+  explicit CanMessagePublisherNode(const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
+  ~CanMessagePublisherNode();
 
 private:
-  void timerCallback();
-  void canMessageCallback(const can_msgs::msg::Frame::SharedPtr msg);
+  // CAN message parameters
+  uint32_t can_id_;
+  bool is_extended_;
+  uint8_t dlc_;
+  std::vector<uint8_t> data_pattern_;
+  std::chrono::milliseconds period_ms_;
 
-  rclcpp::TimerBase::SharedPtr timer_;
-  rclcpp::Publisher<can_msgs::msg::Frame>::SharedPtr can_publisher_;
-  rclcpp::Subscription<can_msgs::msg::Frame>::SharedPtr can_subscription_;
+  // Node components
+  rclcpp::Publisher<can_msgs::msg::Frame>::SharedPtr publisher_;
+  rclcpp::Subscription<can_msgs::msg::Frame>::SharedPtr can_subscriber_;
+  std::thread publish_thread_;
+  std::atomic<bool> is_running_;
   ASPCStateMachine state_machine_;
-  std::vector<uint32_t> can_ids_;
+
+  // Methods
+  void declareParameters();
+  void startPublishing();
+  void stopPublishing();
+  void publishLoop();
+  void canMessageCallback(const can_msgs::msg::Frame::SharedPtr msg);
 };
 
 }  // namespace can_message_handler
