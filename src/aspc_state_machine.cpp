@@ -9,9 +9,40 @@ ASPCStateMachine::ASPCStateMachine()
 {
 }
 
+bool ASPCStateMachine::validateMessage(const can_msgs::msg::Frame::SharedPtr msg)
+{
+  // Check if message ID is valid
+  if (msg->id != 0x211) {
+    RCLCPP_WARN(rclcpp::get_logger("ASPCStateMachine"), "Invalid message ID: 0x%X", msg->id);
+    return false;
+  }
+
+  // Check if message length is valid
+  if (msg->dlc != 8) {
+    RCLCPP_WARN(rclcpp::get_logger("ASPCStateMachine"), "Invalid message length: %d", msg->dlc);
+    return false;
+  }
+
+  return true;
+}
+
+uint8_t ASPCStateMachine::calculateChecksum(const can_msgs::msg::Frame& msg)
+{
+  uint8_t checksum = 0;
+  for (int i = 0; i < 7; ++i) {
+    checksum += msg.data[i];
+  }
+  return checksum;
+}
+
+void ASPCStateMachine::updateAliveCnt()
+{
+  alive_cnt_ = (alive_cnt_ + 1) & 0x0F;  // Increment and wrap around at 16
+}
+
 void ASPCStateMachine::updateState(const can_msgs::msg::Frame::SharedPtr msg)
 {
-  if (msg->id != 0x211) {
+  if (!validateMessage(msg)) {
     return;
   }
 
@@ -70,9 +101,9 @@ std::vector<can_msgs::msg::Frame> ASPCStateMachine::generateOutputMessages()
 {
   std::vector<can_msgs::msg::Frame> messages;
   
-  // Calculate AliveCnt (4-bit counter, 0-15)
+  // Update AliveCnt
+  updateAliveCnt();
   uint8_t current_alive_cnt = alive_cnt_;
-  alive_cnt_ = (alive_cnt_ + 1) & 0x0F;  // Increment and wrap around at 16
   
   for (const auto& can_id : can_ids_) {
     can_msgs::msg::Frame message;
@@ -136,12 +167,8 @@ std::vector<can_msgs::msg::Frame> ASPCStateMachine::generateOutputMessages()
         break;
     }
 
-    // Calculate checksum (sum of bytes 0-6)
-    uint8_t checksum = 0;
-    for (int i = 0; i < 7; ++i) {
-      checksum += message.data[i];
-    }
-    message.data[7] = checksum;
+    // Calculate and set checksum
+    message.data[7] = calculateChecksum(message);
 
     messages.push_back(message);
   }
