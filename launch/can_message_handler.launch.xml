@@ -1,0 +1,17 @@
+<?xml version='1.0' ?>
+<launch>
+  <!-- SWS_250324: Launch the publisher node -->
+  <node pkg="can_message_handler" exec="can_message_publisher_node" name="can_message_publisher">
+    <param name="can_ids" value="0x001,0x002,0x003"/>
+    <param name="is_extended" value="false"/>
+    <param name="dlc" value="8"/>
+    <param name="period_ms" value="10"/>
+  </node>
+
+  <!-- SWS_250324: Launch the receiver node -->
+  <node pkg="can_message_handler" exec="can_message_receiver_node" name="can_message_receiver">
+    <param name="target_can_id" value="0x211"/>
+    <param name="target_byte_index" value="1"/>
+    <param name="target_bit_index" value="0"/>
+  </node>
+</launch> 

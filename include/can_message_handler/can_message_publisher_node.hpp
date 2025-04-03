@@ -3,9 +3,7 @@
 
 #include <rclcpp/rclcpp.hpp>
 #include <can_msgs/msg/frame.hpp>
-#include <memory>
-#include <thread>
-#include <atomic>
+#include "can_message_handler/aspc_state_machine.hpp"
 
 namespace can_message_handler
 {
@@ -13,20 +11,17 @@ namespace can_message_handler
 class CanMessagePublisherNode : public rclcpp::Node
 {
 public:
-  explicit CanMessagePublisherNode(const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
-  ~CanMessagePublisherNode();
+  explicit CanMessagePublisherNode(const rclcpp::NodeOptions & options);
 
 private:
-  // Node components
-  rclcpp::Publisher<can_msgs::msg::Frame>::SharedPtr publisher_;
+  void timerCallback();
+  void canMessageCallback(const can_msgs::msg::Frame::SharedPtr msg);
 
-  // Thread control
-  std::thread publish_thread_;
-  std::atomic<bool> is_running_{false};
-
-  // Methods
-  void startPublishing();
-  void publishLoop();
+  rclcpp::TimerBase::SharedPtr timer_;
+  rclcpp::Publisher<can_msgs::msg::Frame>::SharedPtr can_publisher_;
+  rclcpp::Subscription<can_msgs::msg::Frame>::SharedPtr can_subscription_;
+  ASPCStateMachine state_machine_;
+  std::vector<uint32_t> can_ids_;
 };
 
 }  // namespace can_message_handler

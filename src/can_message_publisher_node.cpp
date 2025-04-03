@@ -1,6 +1,5 @@
 #include "can_message_handler/can_message_publisher_node.hpp"
-#include <thread>
-#include <chrono>
+#include <rclcpp/rclcpp.hpp>
 
 namespace can_message_handler
 {
@@ -8,45 +7,45 @@ namespace can_message_handler
 CanMessagePublisherNode::CanMessagePublisherNode(const rclcpp::NodeOptions & options)
 : Node("can_message_publisher", options)
 {
-  publisher_ = this->create_publisher<can_msgs::msg::Frame>(
-    "to_can_bus", 10);
-
-  startPublishing();
-
-  RCLCPP_INFO(this->get_logger(), "CanMessagePublisherNode initialized");
-}
-
-CanMessagePublisherNode::~CanMessagePublisherNode()
-{
-  is_running_ = false;
-  if (publish_thread_.joinable()) {
-    publish_thread_.join();
+  // Declare and get parameters
+  this->declare_parameter("can_ids", std::vector<int64_t>{0x001, 0x002, 0x003});
+  auto can_ids_param = this->get_parameter("can_ids").as_integer_array();
+  
+  // Convert int64_t to uint32_t
+  can_ids_.reserve(can_ids_param.size());
+  for (const auto& id : can_ids_param) {
+    can_ids_.push_back(static_cast<uint32_t>(id));
   }
+  
+  // Set CAN IDs in state machine
+  state_machine_.setCanIds(can_ids_);
+
+  // Create publisher
+  can_publisher_ = this->create_publisher<can_msgs::msg::Frame>("can_tx", 10);
+
+  // Create subscription
+  can_subscription_ = this->create_subscription<can_msgs::msg::Frame>(
+    "can_rx", 10,
+    std::bind(&CanMessagePublisherNode::canMessageCallback, this, std::placeholders::_1));
+
+  // Create timer
+  timer_ = this->create_wall_timer(
+    std::chrono::milliseconds(10),
+    std::bind(&CanMessagePublisherNode::timerCallback, this));
+
+  RCLCPP_INFO(this->get_logger(), "CanMessagePublisherNode has been initialized");
 }
 
-void CanMessagePublisherNode::startPublishing()
+void CanMessagePublisherNode::canMessageCallback(const can_msgs::msg::Frame::SharedPtr msg)
 {
-  is_running_ = true;
-  publish_thread_ = std::thread(&CanMessagePublisherNode::publishLoop, this);
+  state_machine_.updateState(msg);
 }
 
-void CanMessagePublisherNode::publishLoop()
+void CanMessagePublisherNode::timerCallback()
 {
-  while (is_running_) {
-    can_msgs::msg::Frame message;
-    message.id = 0x001;
-    message.is_rtr = false;
-    message.is_error = false;
-    message.is_extended = false;
-    message.dlc = 8;
-
-    // Initialize all data bytes to 0
-    for (int i = 0; i < 8; ++i) {
-      message.data[i] = 0;
-    }
-
-    publisher_->publish(message);
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  auto messages = state_machine_.generateOutputMessages();
+  for (const auto& message : messages) {
+    can_publisher_->publish(message);
   }
 }
 
