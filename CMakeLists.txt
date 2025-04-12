@@ -15,9 +15,9 @@ find_package(std_msgs REQUIRED)
 include_directories(include)
 
 # Create the publisher node executable
-add_executable(can_message_publisher_node
-  src/publisher_main.cpp
-  src/can_message_publisher_node.cpp
+add_executable(can_message_sender_node
+  src/sender_main.cpp
+  src/can_message_sender_node.cpp
   src/aspc_state_machine.cpp
 )
 
@@ -28,7 +28,7 @@ add_executable(can_message_receiver_node
 )
 
 # Link dependencies
-ament_target_dependencies(can_message_publisher_node
+ament_target_dependencies(can_message_sender_node
   rclcpp
   can_msgs
   std_msgs
@@ -42,7 +42,7 @@ ament_target_dependencies(can_message_receiver_node
 
 # Install targets
 install(TARGETS
-  can_message_publisher_node
+  can_message_sender_node
   can_message_receiver_node
   DESTINATION lib/${PROJECT_NAME}
 )

@@ -1,21 +1,21 @@
-#ifndef CAN_MESSAGE_HANDLER__CAN_MESSAGE_PUBLISHER_NODE_HPP_
-#define CAN_MESSAGE_HANDLER__CAN_MESSAGE_PUBLISHER_NODE_HPP_
+#ifndef CAN_MESSAGE_HANDLER__CAN_MESSAGE_SENDER_NODE_HPP_
+#define CAN_MESSAGE_HANDLER__CAN_MESSAGE_SENDER_NODE_HPP_
 
 #include <rclcpp/rclcpp.hpp>
 #include <can_msgs/msg/frame.hpp>
-#include <memory>
+#include "can_message_handler/aspc_state_machine.hpp"
 #include <thread>
 #include <atomic>
-#include "can_message_handler/aspc_state_machine.hpp"
+#include <memory>
 
 namespace can_message_handler
 {
 
-class CanMessagePublisherNode : public rclcpp::Node
+class CanMessageSenderNode : public rclcpp::Node
 {
 public:
-  explicit CanMessagePublisherNode(const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
-  ~CanMessagePublisherNode();
+  explicit CanMessageSenderNode(const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
+  ~CanMessageSenderNode();
 
 private:
   // CAN message parameters
@@ -42,4 +42,4 @@ private:
 
 }  // namespace can_message_handler
 
-#endif  // CAN_MESSAGE_HANDLER__CAN_MESSAGE_PUBLISHER_NODE_HPP_ 
+#endif  // CAN_MESSAGE_HANDLER__CAN_MESSAGE_SENDER_NODE_HPP_

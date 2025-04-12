@@ -1,21 +1,23 @@
-#include "can_message_handler/can_message_publisher_node.hpp"
+#include "can_message_handler/can_message_sender_node.hpp"
 #include <rclcpp/rclcpp.hpp>
 #include <string>
 #include <vector>
 #include <sstream>
+#include <thread>
+#include <atomic>
 
 namespace can_message_handler
 {
 
-CanMessagePublisherNode::CanMessagePublisherNode(const rclcpp::NodeOptions & options)
-: Node("can_message_publisher", options)
+CanMessageSenderNode::CanMessageSenderNode(const rclcpp::NodeOptions & options)
+: Node("can_message_sender", options)
 {
   publisher_ = this->create_publisher<can_msgs::msg::Frame>(
     "to_can_bus", 10);
 
   can_subscriber_ = this->create_subscription<can_msgs::msg::Frame>(
     "from_can_bus", 10,
-    std::bind(&CanMessagePublisherNode::canMessageCallback, this, std::placeholders::_1));
+    std::bind(&CanMessageSenderNode::canMessageCallback, this, std::placeholders::_1));
 
   std::string can_ids_str = this->declare_parameter<std::string>("can_ids", "0x001");
   std::vector<uint32_t> can_ids;
@@ -35,22 +37,22 @@ CanMessagePublisherNode::CanMessagePublisherNode(const rclcpp::NodeOptions & opt
   state_machine_.setCanIds(can_ids);  // New method to pass CAN IDs to state machine
   startPublishing();
 
-  RCLCPP_INFO(this->get_logger(), "CanMessagePublisherNode initialized");
+  RCLCPP_INFO(this->get_logger(), "CanMessageSenderNode initialized");
 }
 
-CanMessagePublisherNode::~CanMessagePublisherNode()
+CanMessageSenderNode::~CanMessageSenderNode()
 {
   stopPublishing();
-  RCLCPP_INFO(this->get_logger(), "CanMessagePublisherNode destroyed");
+  RCLCPP_INFO(this->get_logger(), "CanMessageSenderNode destroyed");
 }
 
-void CanMessagePublisherNode::startPublishing()
+void CanMessageSenderNode::startPublishing()
 {
   is_running_ = true;
-  publish_thread_ = std::thread(&CanMessagePublisherNode::publishLoop, this);
+  publish_thread_ = std::thread(&CanMessageSenderNode::publishLoop, this);
 }
 
-void CanMessagePublisherNode::stopPublishing()
+void CanMessageSenderNode::stopPublishing()
 {
   is_running_ = false;
   if (publish_thread_.joinable()) {
@@ -58,7 +60,7 @@ void CanMessagePublisherNode::stopPublishing()
   }
 }
 
-void CanMessagePublisherNode::publishLoop()
+void CanMessageSenderNode::publishLoop()
 {
   while (is_running_) {
     auto messages = state_machine_.generateOutputMessages();
@@ -69,7 +71,7 @@ void CanMessagePublisherNode::publishLoop()
   }
 }
 
-void CanMessagePublisherNode::canMessageCallback(const can_msgs::msg::Frame::SharedPtr msg)
+void CanMessageSenderNode::canMessageCallback(const can_msgs::msg::Frame::SharedPtr msg)
 {
   state_machine_.updateState(msg);
 }

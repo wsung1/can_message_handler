@@ -40,7 +40,7 @@ ros2 launch ros2_socketcan socket_can_bridge.launch.xml interface:=vcan0
 
 3. Run the publisher node:
 ```bash
-ros2 run can_message_handler can_message_publisher_node
+ros2 run can_message_handler can_message_sender_node
 ```
 
 4. Monitor CAN messages:
