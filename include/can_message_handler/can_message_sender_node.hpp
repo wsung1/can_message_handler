@@ -3,6 +3,8 @@
 
 #include <rclcpp/rclcpp.hpp>
 #include <can_msgs/msg/frame.hpp>
+#include <std_msgs/msg/float64.hpp>
+#include <std_msgs/msg/int32.hpp>
 #include "can_message_handler/aspc_state_machine.hpp"
 #include <thread>
 #include <atomic>
@@ -28,9 +30,19 @@ private:
   // Node components
   rclcpp::Publisher<can_msgs::msg::Frame>::SharedPtr publisher_;
   rclcpp::Subscription<can_msgs::msg::Frame>::SharedPtr can_subscriber_;
+  rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr throttle_command_subscriber_;
+  rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr brake_command_subscriber_;
+  rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr steering_command_subscriber_;
+  rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr gear_command_subscriber_;
   std::thread publish_thread_;
   std::atomic<bool> is_running_;
   ASPCStateMachine state_machine_;
+
+  // Variables to store command values
+  double throttle_command_ = 0.0;
+  double brake_command_ = 0.0;
+  double steering_command_ = 0.0;
+  int32_t gear_command_ = 0;
 
   // Methods
   void declareParameters();
@@ -38,6 +50,10 @@ private:
   void stopPublishing();
   void publishLoop();
   void canMessageCallback(const can_msgs::msg::Frame::SharedPtr msg);
+  void throttleCommandCallback(const std_msgs::msg::Float64::SharedPtr msg);
+  void brakeCommandCallback(const std_msgs::msg::Float64::SharedPtr msg);
+  void steeringCommandCallback(const std_msgs::msg::Float64::SharedPtr msg);
+  void gearCommandCallback(const std_msgs::msg::Int32::SharedPtr msg);
 };
 
 }  // namespace can_message_handler

@@ -1,5 +1,6 @@
 #include "can_message_handler/aspc_state_machine.hpp"
 #include <rclcpp/rclcpp.hpp>
+#include <thread>
 
 namespace can_message_handler
 {
@@ -52,6 +53,8 @@ void ASPCStateMachine::updateState(const can_msgs::msg::Frame::SharedPtr msg)
   }
 
   if (new_state != current_state_) {
+    // Add a 10-second delay after state change
+    std::this_thread::sleep_for(std::chrono::seconds(1));
     current_state_ = new_state;
     const char* state_name;
     switch (new_state) {
@@ -97,13 +100,7 @@ std::vector<can_msgs::msg::Frame> ASPCStateMachine::generateOutputMessages()
         if (can_id == 0x001) {
           // Set Aspc_ASDrvRdy (001h 0.2)
           message.data[0] |= (1 << 2);
-          // Reset Aspc_AclDclCtlOn (001h 0.0)
-          message.data[0] &= ~(1 << 0);
-          // Reset Aspc_SteerCtlOn (001h 0.1)
-          message.data[0] &= ~(1 << 1);
-          // Set GearCmd (001h 0.3~5)
-          message.data[0] |= (1 << 3); // P
-          message.data[3] = 0;
+
         }
         break;
 
@@ -113,21 +110,22 @@ std::vector<can_msgs::msg::Frame> ASPCStateMachine::generateOutputMessages()
           message.data[0] |= (1 << 0);
           // Set Aspc_SteerCtlOn (001h 0.1)
           message.data[0] |= (1 << 1);
+          // Set Aspc_ASDrvRdy (001h 0.2)
+          message.data[0] |= (1 << 2);
+
         }
         break;
 
       case ASPCState::DRIVING:
         if (can_id == 0x001) {
-          // Set all control bits
-          message.data[0] |= 0x0F;  // Bits 0-3
-          // Set GearCmd (001h 0.3~5)
-          message.data[0] |= (4 << 3);  // D
-          // Set AccelPosCmd (001h 1.0~7)
-          message.data[1] = 0x01;
-          // Set BrakePosCmd (001h 2.0~7)
-          message.data[2] = 0x02;
-          // Set SteerAngleCmd (001h 3.0~7)
-          message.data[3] = 0x03;
+          // Set Aspc_AclDclCtlOn (001h 0.0)
+          message.data[0] |= (1 << 0);
+          // Set Aspc_SteerCtlOn (001h 0.1)
+          message.data[0] |= (1 << 1);
+          // Set Aspc_ASDrvRdy (001h 0.2)
+          message.data[0] |= (1 << 2);
+
+          //message.data[0] |= (3 << 3);  // N
         }
         break;
 
@@ -135,12 +133,7 @@ std::vector<can_msgs::msg::Frame> ASPCStateMachine::generateOutputMessages()
         break;
     }
 
-    // Calculate checksum (sum of bytes 0-6)
-    uint8_t checksum = 0;
-    for (int i = 0; i < 7; ++i) {
-      checksum += message.data[i];
-    }
-    message.data[7] = checksum;
+    // Checksum calculation is moved to can_message_sender_node.cpp
 
     messages.push_back(message);
   }
