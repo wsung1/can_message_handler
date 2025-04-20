@@ -3,7 +3,6 @@
 
 #include <rclcpp/rclcpp.hpp>
 #include <can_msgs/msg/frame.hpp>
-#include <std_msgs/msg/bool.hpp>
 #include <std_msgs/msg/float64.hpp>
 #include <memory>
 
@@ -20,7 +19,6 @@ private:
   // Node components
   rclcpp::Subscription<can_msgs::msg::Frame>::SharedPtr can_subscriber_;
   rclcpp::Publisher<can_msgs::msg::Frame>::SharedPtr can_publisher_;
-  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr vcu_status_publisher_;
 
   // Publishers for wheel speed and steering angle
   rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr wheel_speed_publisher_;

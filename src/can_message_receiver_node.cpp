@@ -14,9 +14,6 @@ CanMessageReceiverNode::CanMessageReceiverNode(const rclcpp::NodeOptions & optio
   can_publisher_ = this->create_publisher<can_msgs::msg::Frame>(
     "to_can_bus", 10);
 
-  vcu_status_publisher_ = this->create_publisher<std_msgs::msg::Bool>(
-    "vcu_status", 10);
-
   // Create publishers for wheel speed and steering angle
   wheel_speed_publisher_ = this->create_publisher<std_msgs::msg::Float64>(
     "/twist_controller/input/velocity_status", 10);
@@ -36,13 +33,7 @@ void CanMessageReceiverNode::canMessageCallback(const can_msgs::msg::Frame::Shar
 {
   // Process CAN ID 0x211 for VCU status
   if (msg->id == 0x211) {
-    bool vcu_ASDrvDisable = (msg->data[1] & 0x01) != 0;  // Check bit 0 of byte 1
-
-    auto vcu_status_msg = std_msgs::msg::Bool();
-    vcu_status_msg.data = vcu_ASDrvDisable;
-    vcu_status_publisher_->publish(vcu_status_msg);
-
-    RCLCPP_DEBUG(this->get_logger(), "VCU status: %s", vcu_ASDrvDisable ? "true" : "false");
+    //...
   }
   // Process CAN ID 0x212 for wheel speed and steering angle
   else if (msg->id == 0x212) {

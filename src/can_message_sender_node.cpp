@@ -30,10 +30,14 @@ CanMessageSenderNode::CanMessageSenderNode(const rclcpp::NodeOptions & options)
   steering_command_subscriber_ = this->create_subscription<std_msgs::msg::Float64>(
     "/twist_controller/output/steering_cmd", 1,
     std::bind(&CanMessageSenderNode::steeringCommandCallback, this, std::placeholders::_1));
-
+  
   gear_command_subscriber_ = this->create_subscription<std_msgs::msg::Int32>(
-    "/twist_controller/output/gear_cmd", 1,
+    "/can_message_handler/intput/gear_cmd", 1,
     std::bind(&CanMessageSenderNode::gearCommandCallback, this, std::placeholders::_1));
+
+  // Create publisher for gear state
+  gear_state_publisher_ = this->create_publisher<std_msgs::msg::Int32>(
+    "/can_message_handler/output/gear_state", 10);
 
   std::string can_ids_str = this->declare_parameter<std::string>("can_ids", "0x001");
   std::vector<uint32_t> can_ids;
@@ -96,16 +100,45 @@ void CanMessageSenderNode::steeringCommandCallback(const std_msgs::msg::Float64:
 
 void CanMessageSenderNode::gearCommandCallback(const std_msgs::msg::Int32::SharedPtr msg)
 {
-  // Validate gear command (0-4 range)
-  if (msg->data >= 0 && msg->data <= 4) {
-    gear_command_ = msg->data;
-    const char* gear_names[] = {"None", "P", "R", "N", "D"};
-    RCLCPP_DEBUG(this->get_logger(), "Gear command received: %s (%d)", 
-                 gear_names[gear_command_], gear_command_);
-  } else {
-    RCLCPP_WARN(this->get_logger(), "Invalid gear command received: %d (valid range: 0-4)", 
-                msg->data);
+  // Map input values to output values
+  int32_t new_gear = 0;
+  switch (msg->data) {
+    case 22:  // P
+      new_gear = 1;
+      break;
+    case 20:  // R
+      new_gear = 2;
+      break;
+    case 0:   // N
+      new_gear = 3;
+      break;
+    case 2:   // D
+      new_gear = 4;
+      break;
+    default:  // Invalid value
+      RCLCPP_WARN(this->get_logger(), "Invalid gear command received: %d (valid values: 22, 20, 0, 2)", 
+                  msg->data);
+      return;
   }
+
+  // Check if this is a gear change to D or R
+  if ((new_gear == 2 || new_gear == 4) && new_gear != gear_command_) {
+    // Start gear change sequence
+    is_gear_changing_ = true;
+    target_gear_ = new_gear;
+    
+    // Apply brake immediately
+    brake_command_ = 0.5; // Apply brake immediately
+    RCLCPP_INFO(this->get_logger(), "Starting gear change sequence to %s with %.2f brake applied", 
+                new_gear == 2 ? "R" : "D", brake_command_);
+  } else {
+    // Normal gear change without brake sequence
+    gear_command_ = new_gear;
+  }
+
+  const char* gear_names[] = {"None", "P", "R", "N", "D"};
+  RCLCPP_DEBUG(this->get_logger(), "Gear command received: %s (%d)", 
+               gear_names[new_gear], new_gear);
 }
 
 void CanMessageSenderNode::publishLoop()
@@ -146,6 +179,41 @@ void CanMessageSenderNode::publishLoop()
 void CanMessageSenderNode::canMessageCallback(const can_msgs::msg::Frame::SharedPtr msg)
 {
   state_machine_.updateState(msg);
+
+  if (msg->id == 0x211) {
+    // Parse gear state (bits 4-6 of byte 0)
+    vcu_GearState_ = (msg->data[0] >> 4) & 0x07;
+    
+    // Parse brake position (bits 40-47 of byte 5)
+    vcu_BrakePressurePct_ = static_cast<int32_t>(msg->data[5]);  // 0-100 range
+    
+    // Publish gear state
+    auto gear_state_msg = std_msgs::msg::Int32();
+    gear_state_msg.data = vcu_GearState_;
+    gear_state_publisher_->publish(gear_state_msg);
+    
+    RCLCPP_DEBUG(this->get_logger(), "VCU Gear State: %d (0: None, 1: P, 2: R, 3: N, 4: D), Brake Pressure: %d%%", 
+                 vcu_GearState_, vcu_BrakePressurePct_);
+    
+    // Check if gear change is in progress
+    if (is_gear_changing_) {
+      // Check if brake pressure has reached 70% of target (0.5 * 100 * 0.7 = 35%)
+      if (vcu_BrakePressurePct_ >= 35) {
+        // Send gear change command
+        gear_command_ = target_gear_;
+        RCLCPP_INFO(this->get_logger(), "Brake pressure reached %d%%, sending gear change command to %d", 
+                    vcu_BrakePressurePct_, target_gear_);
+      }
+      
+      // Check if VCU gear state matches target gear
+      if (vcu_GearState_ == target_gear_) {
+        RCLCPP_INFO(this->get_logger(), "Gear change confirmed by VCU feedback: %d", vcu_GearState_);
+        is_gear_changing_ = false;
+        brake_command_ = 0.0;  // Release brake
+        RCLCPP_INFO(this->get_logger(), "Gear change sequence completed with %.2f brake applied", brake_command_);
+      }
+    }
+  }
 }
 
 }  // namespace can_message_handler 
