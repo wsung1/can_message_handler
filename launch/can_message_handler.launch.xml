@@ -8,5 +8,6 @@
   </node>
 
   <node pkg="can_message_handler" exec="can_message_receiver_node" name="can_message_receiver">
+    <param name="interpolation_factor" value="0.1"/>
   </node>
 </launch>

@@ -18,26 +18,27 @@ CanMessageSenderNode::CanMessageSenderNode(const rclcpp::NodeOptions & options)
     "from_can_bus", 10,
     std::bind(&CanMessageSenderNode::canMessageCallback, this, std::placeholders::_1));
 
-  // Create subscribers for commands
+  /* From TwistController */
   throttle_command_subscriber_ = this->create_subscription<std_msgs::msg::Float64>(
-    "/twist_controller/output/throttle_cmd", 1,
+    "/twist_controller/throttle_cmd", 1,
     std::bind(&CanMessageSenderNode::throttleCommandCallback, this, std::placeholders::_1));
 
   brake_command_subscriber_ = this->create_subscription<std_msgs::msg::Float64>(
-    "/twist_controller/output/brake_cmd", 1,
+    "/twist_controller/brake_cmd", 1,
     std::bind(&CanMessageSenderNode::brakeCommandCallback, this, std::placeholders::_1));
 
   steering_command_subscriber_ = this->create_subscription<std_msgs::msg::Float64>(
-    "/twist_controller/output/steering_cmd", 1,
+    "/twist_controller/steering_cmd", 1,
     std::bind(&CanMessageSenderNode::steeringCommandCallback, this, std::placeholders::_1));
   
+  /* From AutowareInterface */
   gear_command_subscriber_ = this->create_subscription<std_msgs::msg::Int32>(
-    "/can_message_handler/intput/gear_cmd", 1,
+    "/autoware_interface/gear_cmd", 1, 
     std::bind(&CanMessageSenderNode::gearCommandCallback, this, std::placeholders::_1));
 
-  // Create publisher for gear state
+  /* TO-DO */
   gear_state_publisher_ = this->create_publisher<std_msgs::msg::Int32>(
-    "/can_message_handler/output/gear_state", 10);
+    "/can_message_handler/gear_state", 10);
 
   std::string can_ids_str = this->declare_parameter<std::string>("can_ids", "0x001");
   std::vector<uint32_t> can_ids;
