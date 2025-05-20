@@ -7,15 +7,6 @@ namespace can_message_handler
 CanMessageReceiverNode::CanMessageReceiverNode(const rclcpp::NodeOptions & options)
 : Node("can_message_receiver", options)
 {
-  // Declare parameters
-  this->declare_parameter("interpolation_factor", 0.1);
-  
-  // Get parameters
-  interpolation_factor_ = this->get_parameter("interpolation_factor").as_double();
-  
-  // Log parameter values
-  RCLCPP_INFO(this->get_logger(), "Interpolation factor: %.2f", interpolation_factor_);
-  
   can_subscriber_ = this->create_subscription<can_msgs::msg::Frame>(
     "from_can_bus", 10,
     std::bind(&CanMessageReceiverNode::canMessageCallback, this, std::placeholders::_1));
@@ -25,10 +16,24 @@ CanMessageReceiverNode::CanMessageReceiverNode(const rclcpp::NodeOptions & optio
 
   /* To AutowareInterface, TwistController */
   vehicle_speed_publisher_ = this->create_publisher<std_msgs::msg::Float64>(
-    "/can_message_handler/velocity_status", 10);
+    "/can_message_receiver/velocity_status", 10);
 
   steer_angle_publisher_ = this->create_publisher<std_msgs::msg::Float64>(
-    "/can_message_handler/steering_status", 10);
+    "/can_message_receiver/steering_status", 10);
+
+  gear_state_publisher_ = this->create_publisher<std_msgs::msg::Int32>(
+    "/can_message_receiver/gear_state", 10);
+
+  /* Debug */
+  vcu_speed_publisher_ = this->create_publisher<std_msgs::msg::Float64>(
+    "/can_message_receiver/debug/vcu_speed", 10);
+
+  enco_speed_publisher_ = this->create_publisher<std_msgs::msg::Float64>(
+    "/can_message_receiver/debug/enco_speed", 10);
+ 
+  kinematic_state_subscriber_ = this->create_subscription<nav_msgs::msg::Odometry>(
+    "/localization/kinematic_state", 10,
+    std::bind(&CanMessageReceiverNode::kinematicStateCallback, this, std::placeholders::_1));
 
   RCLCPP_INFO(this->get_logger(), "CanMessageReceiverNode initialized");
 }
@@ -38,59 +43,95 @@ CanMessageReceiverNode::~CanMessageReceiverNode()
   RCLCPP_INFO(this->get_logger(), "CanMessageReceiverNode destroyed");
 }
 
+void CanMessageReceiverNode::kinematicStateCallback(const nav_msgs::msg::Odometry::SharedPtr msg)
+{ 
+  kinematic_state_linear_x_ = msg->twist.twist.linear.x;
+  RCLCPP_DEBUG(this->get_logger(), "Kinematic state linear x: %.2f", kinematic_state_linear_x_);
+}
+
 void CanMessageReceiverNode::canMessageCallback(const can_msgs::msg::Frame::SharedPtr msg)
 {
-  // Update parameters if they have changed
-  if (this->has_parameter("interpolation_factor") && 
-      this->get_parameter("interpolation_factor").as_double() != interpolation_factor_) {
-    interpolation_factor_ = this->get_parameter("interpolation_factor").as_double();
-    RCLCPP_INFO(this->get_logger(), "Interpolation factor updated to: %.2f", interpolation_factor_);
-  }
-  
-  // Process CAN ID 0x211 for vehicle speed
-  if (msg->id == 0x211) {
-    // Parse vehicle speed from bits 24-31 (bytes 3)
-    int16_t raw_speed = msg->data[3];
-    double new_speed = raw_speed * KPH2MPS;
-    
-    // Static variables for interpolation
-    static double target_speed = 0.0;
-    static double current_speed = 0.0;
-    static bool first_message = true;
-    
-    // Initialize on first message
-    if (first_message) {
-      target_speed = new_speed;
-      current_speed = new_speed;
-      first_message = false;
-      RCLCPP_DEBUG(this->get_logger(), "First speed message: %.2f", new_speed);
-    } else {
-      // Update target speed when it changes
-      target_speed = new_speed;
-      RCLCPP_DEBUG(this->get_logger(), "Speed target changed to: %.2f", target_speed);
-      
-      // Simple linear interpolation: move interpolation_factor_ of the remaining distance each step
-      double diff = target_speed - current_speed;
-      current_speed += diff * interpolation_factor_;  // Move interpolation_factor_ closer to target
-      
-      // Update the vehicle speed
-      vcu_VehicleSpeed_ = current_speed;
+  // Process CAN ID 0x100 for precise vehicle speed
+  if (msg->id == 0x100) {
+    // Parse vehicle speed from bytes 0-1 (16-bit value)
+    // Resolution is 0.01 m/s
+    int16_t raw_speed = (msg->data[1] << 8) | msg->data[0];
+    enco_VehicleSpeed_ = raw_speed * 0.01 ; // * KPH2MPS;   // Need not convert to m/s
+
+    // Apply direction based on kinematic state if available and in D gear
+    if (std::abs(kinematic_state_linear_x_) > 0.1 && vcu_GearState_ == 4) {  // D gear
+      // Use kinematic state's sign for direction
+      enco_VehicleSpeed_ = std::abs(enco_VehicleSpeed_) * (kinematic_state_linear_x_ > 0 ? 1.0 : -1.0);
+    }
+
+    if (vcu_GearState_ == 2) {  // R gear
+      enco_VehicleSpeed_ *= -1;  // Make speed negative for reverse
     }
     
-    // Publish vehicle speed
-    auto vehicle_speed_msg = std_msgs::msg::Float64();
-    vehicle_speed_msg.data = vcu_VehicleSpeed_;
-    vehicle_speed_publisher_->publish(vehicle_speed_msg);
+    // Publish vehicle speed measured by encorder installed for better resolution
+    auto enco_speed_msg = std_msgs::msg::Float64();
+    enco_speed_msg.data = enco_VehicleSpeed_;
+    enco_speed_publisher_->publish(enco_speed_msg);
     
-    RCLCPP_DEBUG(this->get_logger(), "Speed: %.2f (target: %.2f, current: %.2f)", 
-                 vcu_VehicleSpeed_, target_speed, current_speed);
+    RCLCPP_DEBUG(this->get_logger(), "Speed: %.2f", enco_VehicleSpeed_);
+
+    // Check if wheel encoder speed is reliable
+    if (std::abs(enco_VehicleSpeed_ - vcu_VehicleSpeed_) < 1.0) {
+      // If reliable, use average of both speeds
+      final_VehicleSpeed_ = enco_VehicleSpeed_;
+    } else {
+      // If unreliable, use VCU speed and log error
+      //final_VehicleSpeed_ = vcu_VehicleSpeed_;
+      //final_VehicleSpeed_ = (enco_VehicleSpeed_ + vcu_VehicleSpeed_) / 2.0;
+      final_VehicleSpeed_ = enco_VehicleSpeed_;
+      RCLCPP_ERROR(this->get_logger(), 
+        "Wheel encoder speed unreliable! Using VCU speed. VCU: %.2f m/s, Wheel Encoder: %.2f m/s", 
+        vcu_VehicleSpeed_, enco_VehicleSpeed_);
+    }
+
+    // Publish final vehicle speed
+    auto vehicle_speed_msg = std_msgs::msg::Float64();
+    vehicle_speed_msg.data = final_VehicleSpeed_;
+    vehicle_speed_publisher_->publish(vehicle_speed_msg);
   }
+
+  // Process CAN ID 0x211 for gear state
+  else if (msg->id == 0x211) {
+    // Parse gear state (bits 4-6 of byte 0)
+    vcu_GearState_ = (msg->data[0] >> 4) & 0x07;
+
+    // Publish gear state
+    auto gear_state_msg = std_msgs::msg::Int32();
+    gear_state_msg.data = vcu_GearState_;
+    gear_state_publisher_->publish(gear_state_msg);
+
+    // Parse vehicle speed from byte 3 (8-bit value)
+    // Resolution is 1 km/h
+    int16_t raw_speed = msg->data[3];
+    vcu_VehicleSpeed_ = raw_speed * KPH2MPS;
+
+    // Apply direction based on kinematic state if available and in D gear
+    if (std::abs(kinematic_state_linear_x_) > 0.1 && vcu_GearState_ == 4) {  // D gear
+      // Use kinematic state's sign for direction
+      vcu_VehicleSpeed_ = std::abs(vcu_VehicleSpeed_) * (kinematic_state_linear_x_ > 0 ? 1.0 : -1.0);
+    }
+
+    if (vcu_GearState_ == 2) {  // R gear
+      vcu_VehicleSpeed_ *= -1;  // Make speed negative for reverse
+    }
+
+    // Publish vehicle speed measured by vcu
+    auto vcu_speed_msg = std_msgs::msg::Float64();
+    vcu_speed_msg.data = vcu_VehicleSpeed_;
+    vcu_speed_publisher_->publish(vcu_speed_msg);
+  }
+  
   // Process CAN ID 0x212 for steering angle
   else if (msg->id == 0x212) {
     // Parse steering angle (bytes 4-5, starting from bit 32)
     // Convert raw value to actual angle using resolution
     int16_t raw_angle = (msg->data[5] << 8) | msg->data[4];
-    vcu_SteerAngle_ = raw_angle * 0.01 * DEG2RAD; // Apply resolution of 0.01
+    vcu_SteerAngle_ = raw_angle * 0.01 * DEG2RAD * -1; // Apply resolution of 0.01
     // Publish steering angle
     auto steer_angle_msg = std_msgs::msg::Float64();
     steer_angle_msg.data = vcu_SteerAngle_;
